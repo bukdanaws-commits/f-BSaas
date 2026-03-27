@@ -1,7 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { Loader2 } from 'lucide-react'
 import { 
   Building2, 
   Users, 
@@ -12,42 +11,33 @@ import {
   DollarSign,
   CheckCircle,
   XCircle,
-  Clock,
-  Calendar
+  Clock
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-
-// Mock data
-const MOCK_TENANTS = [
-  { id: '1', name: 'PT Event Organizer Indonesia', status: 'active', owner: 'John Doe', events: 12, credits: 5250, revenue: 2500000 },
-  { id: '2', name: 'Creative Events ID', status: 'active', owner: 'Jane Smith', events: 8, credits: 3200, revenue: 1500000 },
-  { id: '3', name: 'Gathering Corp', status: 'pending', owner: 'Bob Wilson', events: 0, credits: 550, revenue: 0 },
-  { id: '4', name: 'Tech Conference Pro', status: 'suspended', owner: 'Alice Chen', events: 3, credits: 0, revenue: 500000 },
-]
-
-const MOCK_TRANSACTIONS = [
-  { id: '1', tenant: 'PT Event Organizer Indonesia', type: 'purchase', amount: 5000, price: 400000, date: '2024-03-15' },
-  { id: '2', tenant: 'Creative Events ID', type: 'purchase', amount: 2500, price: 225000, date: '2024-03-14' },
-  { id: '3', tenant: 'Gathering Corp', type: 'bonus', amount: 50, price: 0, date: '2024-03-10' },
-  { id: '4', tenant: 'PT Event Organizer Indonesia', type: 'usage', amount: -150, price: 0, date: '2024-03-15' },
-]
-
-const stats = {
-  totalTenants: 4,
-  activeTenants: 2,
-  pendingTenants: 1,
-  suspendedTenants: 1,
-  totalEvents: 23,
-  totalUsers: 156,
-  totalRevenue: 4500000,
-  totalCreditsSold: 12500,
-  monthlyGrowth: 23.5,
-}
+import { useAdminDashboard, useAdminTenants } from '@/hooks/use-api'
 
 export default function SuperAdminDashboard() {
+  const { stats, loading: statsLoading } = useAdminDashboard()
+  const { tenants, loading: tenantsLoading } = useAdminTenants()
+  
+  const loading = statsLoading || tenantsLoading
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#47b2e4]" />
+      </div>
+    )
+  }
+
+  // Calculate tenant status counts
+  const activeTenants = tenants.filter(t => t.status === 'active').length
+  const pendingTenants = tenants.filter(t => t.status === 'pending').length
+  const suspendedTenants = tenants.filter(t => t.status === 'suspended').length
+
   return (
     <div className="space-y-6">
       {/* Stats Grid */}
@@ -58,8 +48,8 @@ export default function SuperAdminDashboard() {
               <Building2 className="h-5 w-5 opacity-80" />
               <span className="text-sm opacity-90">Total EO</span>
             </div>
-            <p className="text-3xl font-bold mt-2">{stats.totalTenants}</p>
-            <p className="text-xs opacity-75 mt-1">{stats.activeTenants} aktif</p>
+            <p className="text-3xl font-bold mt-2">{stats?.total_tenants || tenants.length}</p>
+            <p className="text-xs opacity-75 mt-1">{activeTenants} aktif</p>
           </CardContent>
         </Card>
         
@@ -69,7 +59,7 @@ export default function SuperAdminDashboard() {
               <Ticket className="h-5 w-5 opacity-80" />
               <span className="text-sm opacity-90">Events</span>
             </div>
-            <p className="text-3xl font-bold mt-2">{stats.totalEvents}</p>
+            <p className="text-3xl font-bold mt-2">{stats?.total_events || 0}</p>
           </CardContent>
         </Card>
         
@@ -79,7 +69,7 @@ export default function SuperAdminDashboard() {
               <Users className="h-5 w-5 opacity-80" />
               <span className="text-sm opacity-90">Users</span>
             </div>
-            <p className="text-3xl font-bold mt-2">{stats.totalUsers}</p>
+            <p className="text-3xl font-bold mt-2">{stats?.total_users || 0}</p>
           </CardContent>
         </Card>
         
@@ -89,7 +79,7 @@ export default function SuperAdminDashboard() {
               <DollarSign className="h-5 w-5 opacity-80" />
               <span className="text-sm opacity-90">Revenue</span>
             </div>
-            <p className="text-3xl font-bold mt-2">Rp {(stats.totalRevenue / 1000000).toFixed(1)}M</p>
+            <p className="text-3xl font-bold mt-2">Rp {((stats?.total_revenue || 0) / 1000000).toFixed(1)}M</p>
           </CardContent>
         </Card>
         
@@ -97,10 +87,10 @@ export default function SuperAdminDashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
               <CreditCard className="h-5 w-5 opacity-80" />
-              <span className="text-sm opacity-90">Credits</span>
+              <span className="text-sm opacity-90">Active</span>
             </div>
-            <p className="text-3xl font-bold mt-2">{stats.totalCreditsSold.toLocaleString()}</p>
-            <p className="text-xs opacity-75 mt-1">terjual</p>
+            <p className="text-3xl font-bold mt-2">{stats?.active_tenants || 0}</p>
+            <p className="text-xs opacity-75 mt-1">tenants</p>
           </CardContent>
         </Card>
         
@@ -108,62 +98,59 @@ export default function SuperAdminDashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 opacity-80" />
-              <span className="text-sm opacity-90">Growth</span>
+              <span className="text-sm opacity-90">Events</span>
             </div>
-            <p className="text-3xl font-bold mt-2">+{stats.monthlyGrowth}%</p>
-            <p className="text-xs opacity-75 mt-1">bulan ini</p>
+            <p className="text-3xl font-bold mt-2">{stats?.active_events || 0}</p>
+            <p className="text-xs opacity-75 mt-1">active</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent Transactions */}
+      {/* Recent Tenants */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5 text-[#47b2e4]" />
-            Transaksi Terbaru
+            Tenant Terbaru
           </CardTitle>
-          <CardDescription>Activity log platform</CardDescription>
+          <CardDescription>Daftar tenant pada platform</CardDescription>
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[300px]">
             <div className="space-y-3">
-              {MOCK_TRANSACTIONS.map((tx) => (
-                <div key={tx.id} className="flex items-center gap-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+              {tenants.slice(0, 10).map((tenant) => (
+                <div key={tenant.id} className="flex items-center gap-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                   <div className={cn(
                     "p-2 rounded-full",
-                    tx.type === 'purchase' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 
-                    tx.type === 'usage' ? 'bg-orange-100 dark:bg-orange-900/30' :
-                    'bg-blue-100 dark:bg-blue-900/30'
+                    tenant.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 
+                    tenant.status === 'pending' ? 'bg-amber-100 dark:bg-amber-900/30' :
+                    'bg-red-100 dark:bg-red-900/30'
                   )}>
-                    {tx.type === 'purchase' ? (
-                      <CreditCard className="h-4 w-4 text-emerald-600" />
-                    ) : tx.type === 'usage' ? (
-                      <Activity className="h-4 w-4 text-orange-600" />
-                    ) : (
-                      <TrendingUp className="h-4 w-4 text-blue-600" />
-                    )}
+                    <Building2 className={cn(
+                      "h-4 w-4",
+                      tenant.status === 'active' ? 'text-emerald-600' : 
+                      tenant.status === 'pending' ? 'text-amber-600' :
+                      'text-red-600'
+                    )} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{tx.tenant}</p>
-                    <p className="text-sm text-muted-foreground capitalize">{tx.type}</p>
+                    <p className="font-medium truncate">{tenant.name}</p>
+                    <p className="text-sm text-muted-foreground">{tenant.owner_id || 'No owner'}</p>
                   </div>
-                  <div className="text-right">
-                    <p className={cn(
-                      "font-bold",
-                      tx.amount > 0 ? 'text-emerald-600' : 'text-orange-600'
-                    )}>
-                      {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()}
-                    </p>
-                    {tx.price > 0 && (
-                      <p className="text-xs text-muted-foreground">Rp {tx.price.toLocaleString()}</p>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {new Date(tx.date).toLocaleDateString('id-ID')}
-                  </div>
+                  <Badge variant="outline" className={cn(
+                    tenant.status === 'active' && 'text-emerald-600 border-emerald-600',
+                    tenant.status === 'pending' && 'text-amber-600 border-amber-600',
+                    tenant.status === 'suspended' && 'text-red-600 border-red-600'
+                  )}>
+                    {tenant.status}
+                  </Badge>
                 </div>
               ))}
+              {tenants.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No tenants found
+                </div>
+              )}
             </div>
           </ScrollArea>
         </CardContent>
@@ -176,7 +163,7 @@ export default function SuperAdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-emerald-600 dark:text-emerald-400 text-sm font-medium">Active</p>
-                <p className="text-3xl font-bold text-emerald-700 dark:text-emerald-300">{stats.activeTenants}</p>
+                <p className="text-3xl font-bold text-emerald-700 dark:text-emerald-300">{activeTenants}</p>
               </div>
               <CheckCircle className="h-10 w-10 text-emerald-500" />
             </div>
@@ -188,7 +175,7 @@ export default function SuperAdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-amber-600 dark:text-amber-400 text-sm font-medium">Pending</p>
-                <p className="text-3xl font-bold text-amber-700 dark:text-amber-300">{stats.pendingTenants}</p>
+                <p className="text-3xl font-bold text-amber-700 dark:text-amber-300">{pendingTenants}</p>
               </div>
               <Clock className="h-10 w-10 text-amber-500" />
             </div>
@@ -200,7 +187,7 @@ export default function SuperAdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-red-600 dark:text-red-400 text-sm font-medium">Suspended</p>
-                <p className="text-3xl font-bold text-red-700 dark:text-red-300">{stats.suspendedTenants}</p>
+                <p className="text-3xl font-bold text-red-700 dark:text-red-300">{suspendedTenants}</p>
               </div>
               <XCircle className="h-10 w-10 text-red-500" />
             </div>

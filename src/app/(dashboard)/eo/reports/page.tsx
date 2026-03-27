@@ -50,7 +50,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StatsCard, StatsGrid } from '@/components/dashboard/StatsCard'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
-import { useTenantEvents, useDataStore, useTenantStats } from '@/stores/mock-store'
 
 // =====================================
 // TYPES

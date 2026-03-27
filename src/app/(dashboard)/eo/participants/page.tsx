@@ -81,7 +81,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { StatsCard, StatsGrid } from '@/components/dashboard/StatsCard'
 import { cn, generateQRCode } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
-import { useDataStore } from '@/stores/mock-store'
 
 // =====================================
 // TYPES

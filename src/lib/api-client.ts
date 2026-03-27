@@ -4,18 +4,19 @@
 // Direct API calls in production
 // =====================================
 
-// In production, use direct API URL
-// In development, use Next.js API proxy to avoid CORS
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/proxy'
 
-// Types
+// =====================================
+// TYPES
+// =====================================
+
 export interface User {
   id: string
   email: string
   name: string
   avatar_url?: string
   is_super_admin: boolean
-  role: 'super_admin' | 'owner' | 'admin' | 'crew'
+  role?: 'super_admin' | 'owner' | 'admin' | 'crew'
   tenant?: Tenant
   wallet?: CreditWallet
 }
@@ -27,6 +28,13 @@ export interface Tenant {
   status: string
   phone?: string
   address?: string
+  logo_url?: string
+  created_at?: string
+  owner_id?: string
+  eventCount?: number
+  balance?: number
+  bonusBalance?: number
+  totalSpent?: number
 }
 
 export interface CreditWallet {
@@ -70,8 +78,12 @@ export interface Participant {
   name: string
   email: string
   phone?: string
+  company?: string
+  position?: string
   qr_code: string
+  qr_code_url?: string
   ticket_type_id?: string
+  ticket_type?: TicketType
   is_checked_in: boolean
   checked_in_at?: string
   checkin_count: number
@@ -88,6 +100,20 @@ export interface Participant {
   updated_at: string
 }
 
+export interface TicketType {
+  id: string
+  event_id: string
+  name: string
+  description?: string
+  price: number
+  quota: number
+  sold: number
+  is_free: boolean
+  features?: string[]
+  is_active: boolean
+  created_at: string
+}
+
 export interface PricingPackage {
   id: string
   name: string
@@ -98,6 +124,7 @@ export interface PricingPackage {
   features: string[]
   is_popular: boolean
   is_active: boolean
+  sort_order?: number
 }
 
 export interface CreditTransaction {
@@ -111,17 +138,97 @@ export interface CreditTransaction {
   created_at: string
 }
 
+export interface MenuItem {
+  id: string
+  event_id: string
+  booth_id?: string
+  name: string
+  description?: string
+  type: 'food' | 'drink'
+  price: number
+  stock: number
+  claimed: number
+  image_url?: string
+  is_active: boolean
+  booth?: Booth
+}
+
+export interface Booth {
+  id: string
+  event_id: string
+  name: string
+  type: 'food' | 'drink' | 'both'
+  description?: string
+  location?: string
+  is_active: boolean
+}
+
+export interface Membership {
+  id: string
+  user_id: string
+  tenant_id: string
+  role: 'owner' | 'admin' | 'crew'
+  permissions?: string[]
+  status: string
+  user?: User
+  created_at: string
+}
+
+export interface CheckinRecord {
+  id: string
+  event_id: string
+  participant_id: string
+  operator_id: string
+  desk_number: number
+  created_at: string
+  participant?: Participant
+}
+
+export interface DisplayQueue {
+  id: string
+  event_id: string
+  participant_id: string
+  name: string
+  photo_url?: string
+  message?: string
+  is_displayed: boolean
+  created_at: string
+}
+
+export interface EventStats {
+  total_participants: number
+  checked_in: number
+  total_food_claims: number
+  total_drink_claims: number
+  pending_payments?: number
+  total_revenue?: number
+}
+
+export interface PlatformStats {
+  total_tenants: number
+  active_tenants: number
+  total_users: number
+  total_events: number
+  active_events: number
+  total_revenue: number
+}
+
 export interface ApiResponse<T> {
   success: boolean
   message?: string
   data?: T
   error?: string
+  total?: number
+  page?: number
+  limit?: number
 }
 
 export interface PaginatedResponse<T> {
   success: boolean
   data: T[]
   total: number
+  page?: number
+  limit?: number
 }
 
 // =====================================
@@ -131,7 +238,6 @@ class ApiClient {
   private token: string | null = null
 
   constructor() {
-    // Load token from localStorage on client side
     if (typeof window !== 'undefined') {
       this.token = localStorage.getItem('auth_token')
     }
@@ -152,13 +258,7 @@ class ApiClient {
     return this.token
   }
 
-  // Build URL - handles both proxy and direct API
   private buildUrl(endpoint: string): string {
-    // If using direct API URL (production), endpoint already includes /api prefix
-    if (API_BASE_URL.startsWith('http')) {
-      return `${API_BASE_URL}${endpoint}`
-    }
-    // If using proxy (development), prepend /api prefix
     return `${API_BASE_URL}${endpoint}`
   }
 
@@ -197,6 +297,9 @@ class ApiClient {
         success: true,
         data: data.data || data,
         message: data.message,
+        total: data.total,
+        page: data.page,
+        limit: data.limit,
       }
     } catch (error) {
       return {
@@ -268,13 +371,14 @@ class ApiClient {
     })
   }
 
+  async duplicateEvent(id: string) {
+    return this.request<Event>(`/events/${id}/duplicate`, {
+      method: 'POST',
+    })
+  }
+
   async getEventStats(id: string) {
-    return this.request<{
-      total_participants: number
-      checked_in: number
-      total_food_claims: number
-      total_drink_claims: number
-    }>(`/events/${id}/stats`)
+    return this.request<EventStats>(`/events/${id}/stats`)
   }
 
   // ==================== PARTICIPANTS ====================
@@ -292,10 +396,27 @@ class ApiClient {
     return this.request<Participant>(`/participants/qr/${qrCode}`)
   }
 
+  async getParticipant(id: string) {
+    return this.request<Participant>(`/participants/${id}`)
+  }
+
   async createParticipant(eventId: string, data: Partial<Participant>) {
     return this.request<Participant>(`/events/${eventId}/participants`, {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+  }
+
+  async updateParticipant(id: string, data: Partial<Participant>) {
+    return this.request<Participant>(`/participants/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteParticipant(id: string) {
+    return this.request<void>(`/participants/${id}`, {
+      method: 'DELETE',
     })
   }
 
@@ -324,6 +445,32 @@ class ApiClient {
     }
   }
 
+  // ==================== TICKET TYPES ====================
+
+  async getTicketTypes(eventId: string) {
+    return this.request<TicketType[]>(`/events/${eventId}/tickets`)
+  }
+
+  async createTicketType(eventId: string, data: Partial<TicketType>) {
+    return this.request<TicketType>(`/events/${eventId}/tickets`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateTicketType(id: string, data: Partial<TicketType>) {
+    return this.request<TicketType>(`/tickets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteTicketType(id: string) {
+    return this.request<void>(`/tickets/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
   // ==================== CHECK-IN ====================
 
   async checkin(data: { qr_code: string; event_id: string; desk_number?: number }) {
@@ -331,6 +478,26 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
     })
+  }
+
+  async manualCheckin(data: { participant_id: string; event_id: string; desk_number?: number }) {
+    return this.request<{ success: boolean; message: string; participant: Participant }>('/checkin/manual', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async undoCheckin(id: string) {
+    return this.request<{ success: boolean; message: string }>('/checkin/undo/' + id, {
+      method: 'POST',
+    })
+  }
+
+  async getCheckinHistory(eventId: string, params?: { limit?: number }) {
+    const query = new URLSearchParams()
+    if (params?.limit) query.set('limit', params.limit.toString())
+    
+    return this.request<CheckinRecord[]>(`/checkin/history/${eventId}?${query}`)
   }
 
   // ==================== CLAIMS ====================
@@ -342,16 +509,31 @@ class ApiClient {
     })
   }
 
+  async quickClaim(data: { participant_id: string; event_id: string; claim_type: 'food' | 'drink' }) {
+    return this.request<{ success: boolean; message: string; participant: Participant }>('/claims/quick', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getClaimHistory(eventId: string, params?: { limit?: number }) {
+    const query = new URLSearchParams()
+    if (params?.limit) query.set('limit', params.limit.toString())
+    
+    return this.request<any[]>(`/claims/history/${eventId}?${query}`)
+  }
+
   // ==================== CREDITS ====================
 
   async getWallet() {
     return this.request<CreditWallet>('/credits/wallet')
   }
 
-  async getCreditTransactions(params?: { page?: number; limit?: number }) {
+  async getCreditTransactions(params?: { page?: number; limit?: number; type?: string }) {
     const query = new URLSearchParams()
     if (params?.page) query.set('page', params.page.toString())
     if (params?.limit) query.set('limit', params.limit.toString())
+    if (params?.type) query.set('type', params.type)
     
     return this.request<CreditTransaction[]>(`/credits/transactions?${query}`)
   }
@@ -375,7 +557,257 @@ class ApiClient {
     })
   }
 
+  // ==================== TENANT SETTINGS ====================
+
+  async getTenantSettings() {
+    return this.request<Tenant>('/tenants/me')
+  }
+
+  async updateTenantSettings(data: Partial<Tenant>) {
+    return this.request<Tenant>('/tenants/me', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  // ==================== TEAM / MEMBERSHIPS ====================
+
+  async getMemberships() {
+    return this.request<Membership[]>('/tenants/crew')
+  }
+
+  async inviteMember(data: { email: string; role: string; permissions?: string[] }) {
+    return this.request<Membership>('/tenants/crew/invite', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateMembership(id: string, data: Partial<Membership>) {
+    return this.request<Membership>(`/tenants/crew/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async removeMember(id: string) {
+    return this.request<void>(`/tenants/crew/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // ==================== BOOTHS ====================
+
+  async getBooths(eventId: string) {
+    return this.request<Booth[]>(`/events/${eventId}/booths`)
+  }
+
+  async createBooth(eventId: string, data: Partial<Booth>) {
+    return this.request<Booth>(`/events/${eventId}/booths`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateBooth(id: string, data: Partial<Booth>) {
+    return this.request<Booth>(`/booths/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteBooth(id: string) {
+    return this.request<void>(`/booths/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // ==================== MENU ITEMS ====================
+
+  async getMenuItems(eventId: string) {
+    return this.request<MenuItem[]>(`/events/${eventId}/menu`)
+  }
+
+  async createMenuItem(eventId: string, data: Partial<MenuItem>) {
+    return this.request<MenuItem>(`/events/${eventId}/menu`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateMenuItem(id: string, data: Partial<MenuItem>) {
+    return this.request<MenuItem>(`/menu-items/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteMenuItem(id: string) {
+    return this.request<void>(`/menu-items/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // ==================== MENU CATEGORIES ====================
+
+  async getMenuCategories(eventId: string) {
+    return this.request<any[]>(`/events/${eventId}/menu-categories`)
+  }
+
+  async createMenuCategory(eventId: string, data: { name: string; type: string }) {
+    return this.request<any>(`/events/${eventId}/menu-categories`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateMenuCategory(id: string, data: Partial<{ name: string; type: string }>) {
+    return this.request<any>(`/menu-categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteMenuCategory(id: string) {
+    return this.request<void>(`/menu-categories/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // ==================== DISPLAY ====================
+
+  async getDisplayQueue(eventId: string) {
+    return this.request<DisplayQueue[]>(`/events/${eventId}/display`)
+  }
+
+  async addToDisplayQueue(eventId: string, data: { participant_id: string; name: string; photo_url?: string }) {
+    return this.request<DisplayQueue>(`/events/${eventId}/display`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async markDisplayed(id: string) {
+    return this.request<void>(`/display/${id}`, {
+      method: 'PUT',
+    })
+  }
+
+  async removeFromDisplayQueue(id: string) {
+    return this.request<void>(`/display/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async getDisplaySettings(eventId: string) {
+    return this.request<{ welcome_message: string; display_duration: number; enable_sound: boolean }>(`/events/${eventId}/display/settings`)
+  }
+
+  // ==================== SCAN LOGS ====================
+
+  async getScanLogs(eventId: string, params?: { limit?: number }) {
+    const query = new URLSearchParams()
+    if (params?.limit) query.set('limit', params.limit.toString())
+    
+    return this.request<any[]>(`/events/${eventId}/scan-logs?${query}`)
+  }
+
+  async getScanLogStats(eventId: string) {
+    return this.request<{ total: number; success: number; failed: number }>(`/events/${eventId}/scan-logs/stats`)
+  }
+
   // ==================== ADMIN ====================
+
+  async getAdminDashboard() {
+    return this.request<PlatformStats>('/admin/dashboard')
+  }
+
+  async getAdminAnalytics() {
+    return this.request<{
+      tenants: number
+      users: number
+      events: number
+      active_events: number
+      participants: number
+      checked_in: number
+      total_checkins: number
+    }>('/admin/analytics')
+  }
+
+  async getAdminTenants() {
+    return this.request<Tenant[]>('/admin/tenants')
+  }
+
+  async getAdminTenantDetail(id: string) {
+    return this.request<Tenant>(`/admin/tenants/${id}`)
+  }
+
+  async updateTenantStatus(id: string, status: string) {
+    return this.request<Tenant>(`/admin/tenants/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    })
+  }
+
+  async suspendTenant(id: string) {
+    return this.request<Tenant>(`/admin/tenants/${id}/suspend`, {
+      method: 'PUT',
+    })
+  }
+
+  async activateTenant(id: string) {
+    return this.request<Tenant>(`/admin/tenants/${id}/activate`, {
+      method: 'PUT',
+    })
+  }
+
+  async addCreditsToTenant(tenantId: string, amount: number, description?: string) {
+    return this.request<any>(`/admin/tenants/${tenantId}/credits`, {
+      method: 'POST',
+      body: JSON.stringify({ amount, description }),
+    })
+  }
+
+  async getAdminUsers() {
+    return this.request<User[]>('/admin/users')
+  }
+
+  async getAdminUserDetail(id: string) {
+    return this.request<User>(`/admin/users/${id}`)
+  }
+
+  async updateUser(id: string, data: Partial<User>) {
+    return this.request<User>(`/admin/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async banUser(id: string) {
+    return this.request<User>(`/admin/users/${id}/ban`, {
+      method: 'PUT',
+    })
+  }
+
+  async setSuperAdmin(id: string, isSuperAdmin: boolean) {
+    return this.request<User>(`/admin/users/${id}/super-admin`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_super_admin: isSuperAdmin }),
+    })
+  }
+
+  async getAdminBilling() {
+    return this.request<{
+      total_revenue: number
+      total_credits_sold: number
+      total_transactions: number
+      active_tenants: number
+    }>('/admin/billing')
+  }
+
+  async getAdminPayments() {
+    return this.request<any[]>('/admin/payments')
+  }
 
   async getCreditSettings() {
     return this.request<{
@@ -393,10 +825,38 @@ class ApiClient {
     })
   }
 
-  // ==================== MENU ====================
+  // ==================== REGISTRATION (PUBLIC) ====================
 
-  async getMenuItems(eventId: string) {
-    return this.request<any[]>(`/events/${eventId}/menu`)
+  async registerParticipant(data: {
+    event_id: string
+    name: string
+    email: string
+    phone: string
+    company?: string
+    position?: string
+    ticket_type_id?: string
+  }) {
+    return this.request<Participant>('/registration', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getPublicEvent(eventId: string) {
+    return this.request<Event>(`/public/events/${eventId}`)
+  }
+
+  async getPublicTicketTypes(eventId: string) {
+    return this.request<TicketType[]>(`/public/events/${eventId}/ticket-types`)
+  }
+
+  // ==================== USER ====================
+
+  async updateUserProfile(data: Partial<User>) {
+    return this.request<User>('/users/me', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
   }
 }
 

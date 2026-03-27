@@ -84,7 +84,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { StatsCard, StatsGrid } from '@/components/dashboard/StatsCard'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
-import { useAuthStore, useDataStore, useTenantEvents, useTenantCrew } from '@/stores/mock-store'
+import { useAuthStore } from '@/stores/auth-store'
+import { useTenantEvents, useTenantCrew } from '@/hooks/use-api'
+import { api } from '@/lib/api-client'
 
 // =====================================
 // TYPES

@@ -81,7 +81,6 @@ import { StatsCard, StatsGrid } from '@/components/dashboard/StatsCard'
 import { FNBS_DEFAULTS } from '@/config/menu'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
-import { useTenantEvents, useEventFnb, useDataStore } from '@/stores/mock-store'
 
 // =====================================
 // TYPES

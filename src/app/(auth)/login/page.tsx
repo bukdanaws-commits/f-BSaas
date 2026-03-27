@@ -13,23 +13,31 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { useAuthStore } from '@/stores/mock-store'
 import { useRouter } from 'next/navigation'
+import { api } from '@/lib/api-client'
+import { useToast } from '@/hooks/use-toast'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { demoLogin } = useAuthStore()
+  const { toast } = useToast()
   const [demoLoading, setDemoLoading] = useState<'super_admin' | 'owner' | 'crew' | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'mock'>('checking')
 
-  // Check if using mock mode on mount
+  // Check API connection on mount
   useEffect(() => {
-    // In development, we use mock data by default
-    // Set to mock mode immediately since there's no backend API
-    const timer = setTimeout(() => {
-      setConnectionStatus('mock')
-    }, 500)
-    return () => clearTimeout(timer)
+    const checkConnection = async () => {
+      try {
+        const response = await fetch('/api/proxy/pricing/packages')
+        if (response.ok) {
+          setConnectionStatus('connected')
+        } else {
+          setConnectionStatus('mock')
+        }
+      } catch {
+        setConnectionStatus('mock')
+      }
+    }
+    checkConnection()
   }, [])
 
   // Handle demo login
@@ -37,10 +45,12 @@ export default function LoginPage() {
     setDemoLoading(role)
     
     try {
-      demoLogin(role)
+      const mockToken = `demo_token_${role}_${Date.now()}`
+      localStorage.setItem('auth_token', mockToken)
+      localStorage.setItem('demo_role', role)
+      
       setDemoLoading(null)
       
-      // Redirect based on role
       if (role === 'super_admin') {
         router.push('/super-admin')
       } else if (role === 'crew') {
@@ -52,7 +62,29 @@ export default function LoginPage() {
       setDemoLoading(null)
       console.error('Demo login error:', err)
     }
-  }, [demoLogin, router])
+  }, [router])
+
+  // Handle Google OAuth login
+  const handleGoogleLogin = useCallback(async () => {
+    try {
+      const result = await api.getGoogleAuthUrl()
+      if (result.success && result.data?.auth_url) {
+        window.location.href = result.data.auth_url
+      } else {
+        toast({
+          title: 'Error',
+          description: 'Failed to get Google auth URL',
+          variant: 'destructive'
+        })
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to connect to authentication service',
+        variant: 'destructive'
+      })
+    }
+  }, [toast])
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -98,7 +130,7 @@ export default function LoginPage() {
               {connectionStatus === 'mock' && (
                 <>
                   <WifiOff className="h-4 w-4 text-amber-500" />
-                  <span className="text-amber-600">Demo Mode (Mock Data)</span>
+                  <span className="text-amber-600">Demo Mode</span>
                 </>
               )}
             </div>
@@ -184,8 +216,9 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Google OAuth Button - Disabled in mock mode */}
+            {/* Google OAuth Button */}
             <Button 
+              onClick={handleGoogleLogin}
               disabled={connectionStatus === 'mock'}
               className="w-full bg-white hover:bg-gray-100 text-gray-900 font-medium h-12 border shadow-sm disabled:opacity-50"
             >

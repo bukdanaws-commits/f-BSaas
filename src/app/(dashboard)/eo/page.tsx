@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
+import { Loader2 } from 'lucide-react'
 import {
   Calendar,
   Users,
@@ -17,13 +16,24 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { useAuthStore, useTenantStats, useTenantEvents, useTenantWallet } from '@/stores/mock-store'
+import { useAuthStore } from '@/stores/auth-store'
+import { useTenantStats, useTenantEvents, useTenantWallet } from '@/hooks/use-api'
 
 export default function EODashboard() {
   const currentUser = useAuthStore((state) => state.currentUser)
-  const stats = useTenantStats()
-  const events = useTenantEvents()
-  const wallet = useTenantWallet()
+  const { stats, loading: statsLoading } = useTenantStats()
+  const { events, loading: eventsLoading } = useTenantEvents()
+  const { wallet, loading: walletLoading } = useTenantWallet()
+
+  const loading = statsLoading || eventsLoading || walletLoading
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -31,7 +41,7 @@ export default function EODashboard() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-white">
-            Welcome, {currentUser?.user?.name}!
+            Welcome, {currentUser?.name}!
           </h1>
           <p className="text-slate-400 mt-1">
             Here's what's happening with your events today

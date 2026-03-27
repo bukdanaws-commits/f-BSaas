@@ -56,7 +56,6 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
-import { useDataStore, useAuthStore } from '@/stores/mock-store'
 import { EVENT_CATEGORIES } from '@/config/menu'
 
 // Steps configuration

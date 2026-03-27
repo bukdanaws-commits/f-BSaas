@@ -1,13 +1,13 @@
 'use client'
 
-import { ReactNode, useEffect } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { DashboardSidebar, type MenuGroup, type SidebarTheme } from './DashboardSidebar'
 import { Separator } from '@/components/ui/separator'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage } from '@/components/ui/breadcrumb'
 import { Loader2 } from 'lucide-react'
-import { useAuthStore } from '@/stores/mock-store'
+import { api, type User } from '@/lib/api-client'
 import type { LucideIcon } from 'lucide-react'
 
 interface DashboardLayoutProps {
@@ -25,6 +25,11 @@ interface DashboardLayoutProps {
     bonus: number
   }
   showCredit?: boolean
+}
+
+interface CurrentUserData {
+  user: User
+  role: 'super_admin' | 'owner' | 'admin' | 'crew'
 }
 
 // Breadcrumb configuration
@@ -66,7 +71,58 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const { currentUser, isAuthenticated, logout } = useAuthStore()
+  const [currentUser, setCurrentUser] = useState<CurrentUserData | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  // Check authentication on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('auth_token')
+      const demoRole = localStorage.getItem('demo_role')
+      
+      if (!token) {
+        setLoading(false)
+        router.push('/login')
+        return
+      }
+
+      // Check if demo mode
+      if (token.startsWith('demo_token_') && demoRole) {
+        setCurrentUser({
+          user: {
+            id: 'demo-user',
+            email: `demo@${demoRole}.com`,
+            name: `Demo ${demoRole}`,
+            is_super_admin: demoRole === 'super_admin',
+          },
+          role: demoRole as 'super_admin' | 'owner' | 'admin' | 'crew',
+        })
+        setIsAuthenticated(true)
+        setLoading(false)
+        return
+      }
+
+      // Real API authentication
+      api.setToken(token)
+      const result = await api.getCurrentUser()
+      
+      if (result.success && result.data) {
+        setCurrentUser({
+          user: result.data,
+          role: (result.data.role as 'super_admin' | 'owner' | 'admin' | 'crew') || 'owner',
+        })
+        setIsAuthenticated(true)
+      } else {
+        // Token invalid, redirect to login
+        localStorage.removeItem('auth_token')
+        router.push('/login')
+      }
+      setLoading(false)
+    }
+    
+    checkAuth()
+  }, [router])
 
   // Role check - redirect to correct dashboard
   useEffect(() => {
@@ -84,14 +140,13 @@ export function DashboardLayout({
       if (!pathname.startsWith(correctPath) && pathname !== '/login') {
         router.push(correctPath)
       }
-    } else if (!isAuthenticated && pathname !== '/login') {
-      // Redirect to login if not authenticated
-      router.push('/login')
     }
   }, [isAuthenticated, currentUser, pathname, router])
 
   const handleLogout = () => {
-    logout()
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('demo_role')
+    api.logout()
     router.push('/login')
   }
 
@@ -102,7 +157,7 @@ export function DashboardLayout({
   }
 
   // Loading state
-  if (!isAuthenticated || !currentUser) {
+  if (loading || !isAuthenticated || !currentUser) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-950">
         <div className="flex flex-col items-center gap-4">

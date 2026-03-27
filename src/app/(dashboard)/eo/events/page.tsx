@@ -68,10 +68,12 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { useTenantEvents, useDataStore, useAuthStore } from '@/stores/mock-store'
 import { useToast } from '@/hooks/use-toast'
-import { Event } from '@/types/database'
+import { Event } from '@/lib/api-client'
 import { EVENT_CATEGORIES } from '@/config/menu'
+import { useAuthStore } from '@/stores/auth-store'
+import { useTenantEvents } from '@/hooks/use-api'
+import { api } from '@/lib/api-client'
 
 const ITEMS_PER_PAGE = 6
 
@@ -119,8 +121,7 @@ export default function EventsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   
   // Data
-  const events = useTenantEvents()
-  const { participants, checkins, claims } = useDataStore()
+  const { events, loading: eventsLoading, refetch: refetchEvents } = useTenantEvents()
   const currentUser = useAuthStore((state) => state.currentUser)
   const { toast } = useToast()
 
@@ -191,12 +192,22 @@ export default function EventsPage() {
     
     setIsDeleting(true)
     try {
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const response = await api.deleteEvent(eventToDelete.id)
       
-      toast({ 
-        title: 'Event Deleted', 
-        description: `"${eventToDelete.name}" has been removed successfully` 
-      })
+      if (response.success) {
+        toast({ 
+          title: 'Event Deleted', 
+          description: `"${eventToDelete.name}" has been removed successfully` 
+        })
+        refetchEvents()
+      } else {
+        toast({
+          title: 'Error',
+          description: response.error || 'Failed to delete event',
+          variant: 'destructive'
+        })
+      }
+      
       setDeleteDialogOpen(false)
       setEventToDelete(null)
       
@@ -216,15 +227,13 @@ export default function EventsPage() {
   }
 
   const getEventStats = (eventId: string) => {
-    const eventParticipants = participants.filter(p => p.event_id === eventId)
-    const eventCheckins = checkins.filter(c => c.event_id === eventId)
-    const eventClaims = claims.filter(c => c.event_id === eventId)
-    
+    // Stats would need to be fetched per event from API
+    // For now, return placeholder
     return {
-      participants: eventParticipants.length,
-      checkedIn: eventParticipants.filter(p => p.is_checked_in).length,
-      checkins: eventCheckins.length,
-      claims: eventClaims.length
+      participants: 0,
+      checkedIn: 0,
+      checkins: 0,
+      claims: 0
     }
   }
 

@@ -3,7 +3,6 @@
 import { Ticket } from 'lucide-react'
 import { DashboardLayout } from '@/components/dashboard'
 import { EO_OWNER_MENU, DASHBOARD_META } from '@/config/menu'
-import { useTenantWallet } from '@/stores/mock-store'
 
 export default function EOLayout({
   children,

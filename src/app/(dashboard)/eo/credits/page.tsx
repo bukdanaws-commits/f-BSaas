@@ -61,7 +61,9 @@ import { StatsCard, StatsGrid } from '@/components/dashboard/StatsCard'
 import { CREDIT_PACKAGES } from '@/config/menu'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
-import { useAuthStore, useTenantWallet, useDataStore, useTenantTransactions } from '@/stores/mock-store'
+import { useAuthStore } from '@/stores/auth-store'
+import { useTenantWallet, useTenantTransactions } from '@/hooks/use-api'
+import { api, CreditTransaction } from '@/lib/api-client'
 
 // =====================================
 // TYPES
@@ -180,8 +182,8 @@ const CREDIT_COSTS = [
 // =====================================
 export default function CreditsPage() {
   const { toast } = useToast()
-  const wallet = useTenantWallet()
-  const transactions = useTenantTransactions()
+  const { wallet, loading: walletLoading, refetch: refetchWallet } = useTenantWallet()
+  const { transactions: apiTransactions, loading: txLoading, refetch: refetchTx } = useTenantTransactions()
   const currentUser = useAuthStore((state) => state.currentUser)
 
   // State
