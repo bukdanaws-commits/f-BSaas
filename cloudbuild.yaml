@@ -1,0 +1,163 @@
+# ===========================================
+# EVENTIFY - Google Cloud Build CI/CD Pipeline
+# Automatically deploys on push to master
+# ===========================================
+
+substitutions:
+  _REGION: asia-southeast1
+  _FRONTEND_SERVICE: eventify-frontend
+  _BACKEND_SERVICE: eventify-backend
+
+steps:
+  # ==========================================
+  # BACKEND BUILD & DEPLOY
+  # ==========================================
+  
+  # Step 1: Build Backend Container
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-backend'
+    dir: 'backend'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:latest'
+      - '.'
+
+  # Step 2: Push Backend to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-backend'
+    waitFor: ['build-backend']
+    args:
+      - 'push'
+      - '--all-tags'
+      - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}'
+
+  # Step 3: Deploy Backend to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-backend'
+    waitFor: ['push-backend']
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_BACKEND_SERVICE}'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:$SHORT_SHA'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '8080'
+      - '--memory'
+      - '512Mi'
+      - '--cpu'
+      - '1'
+      - '--min-instances'
+      - '1'
+      - '--max-instances'
+      - '10'
+      - '--set-env-vars'
+      - 'DATABASE_URL=${_DATABASE_URL},JWT_SECRET=${_JWT_SECRET},GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${_GOOGLE_CLIENT_SECRET},FRONTEND_URL=${_FRONTEND_URL},USE_SUPABASE=true,MIDTRANS_SERVER_KEY=${_MIDTRANS_SERVER_KEY},MIDTRANS_CLIENT_KEY=${_MIDTRANS_CLIENT_KEY}'
+      - '--set-secrets'
+      - 'DATABASE_URL=database-url:latest,JWT_SECRET=jwt-secret:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest,MIDTRANS_SERVER_KEY=midtrans-server-key:latest'
+
+  # ==========================================
+  # FRONTEND BUILD & DEPLOY
+  # ==========================================
+  
+  # Step 4: Build Frontend Container
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-frontend'
+    waitFor: ['deploy-backend']
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:latest'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_API_URL=${_API_URL}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SUPABASE_URL=${_SUPABASE_URL}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SUPABASE_ANON_KEY=${_SUPABASE_ANON_KEY}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=${_MIDTRANS_CLIENT_KEY}'
+      - '.'
+
+  # Step 5: Push Frontend to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-frontend'
+    waitFor: ['build-frontend']
+    args:
+      - 'push'
+      - '--all-tags'
+      - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}'
+
+  # Step 6: Deploy Frontend to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-frontend'
+    waitFor: ['push-frontend']
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_FRONTEND_SERVICE}'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:$SHORT_SHA'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '3000'
+      - '--memory'
+      - '1Gi'
+      - '--cpu'
+      - '1'
+      - '--min-instances'
+      - '1'
+      - '--max-instances'
+      - '10'
+      - '--set-env-vars'
+      - 'NODE_ENV=production,NEXT_TELEMETRY_DISABLED=1'
+      - '--set-secrets'
+      - 'NEXTAUTH_SECRET=nextauth-secret:latest,NEXTAUTH_URL=${_FRONTEND_URL}'
+
+  # ==========================================
+  # CLEANUP OLD IMAGES (Optional)
+  # ==========================================
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'cleanup-images'
+    waitFor: ['deploy-frontend']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Keep only last 5 images
+        gcloud container images list-tags gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE} \
+          --format='get(digest)' --sort-by='~timestamp' --limit=5 | \
+          xargs -I {} gcloud container images add-tag \
+          gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}@{} \
+          gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:keep-{} 2>/dev/null || true
+
+# Store images in Artifact Registry
+images:
+  - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:latest'
+  - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:latest'
+
+# Build options
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 100
+
+# Build timeout
+timeout: '1800s'
