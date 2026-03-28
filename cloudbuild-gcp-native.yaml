@@ -1,0 +1,207 @@
+# ===========================================
+# EVENTIFY - GCP Native Cloud Build CI/CD Pipeline
+# Cloud SQL + Cloud Run (No Supabase)
+# ===========================================
+
+substitutions:
+  _REGION: asia-southeast1
+  _FRONTEND_SERVICE: eventify-frontend
+  _BACKEND_SERVICE: eventify-backend
+  _DB_INSTANCE: eventify-db
+  _DB_NAME: eventify
+  _DB_USER: eventify_user
+  _GCS_BUCKET: eventify-uploads
+
+steps:
+  # ==========================================
+  # SETUP - Create Cloud SQL if not exists
+  # ==========================================
+  
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'create-cloudsql-instance'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Check if instance exists
+        if gcloud sql instances describe ${_DB_INSTANCE} --region=${_REGION} 2>/dev/null; then
+          echo "Cloud SQL instance already exists"
+        else
+          echo "Creating Cloud SQL instance..."
+          gcloud sql instances create ${_DB_INSTANCE} \
+            --database-version=POSTGRES_15 \
+            --tier=db-f1-micro \
+            --region=${_REGION} \
+            --storage-type=SSD \
+            --storage-size=10GB \
+            --storage-auto-increase \
+            --backup-start-time=02:00 \
+            --enable-point-in-time-recovery \
+            --database-flags=max_connections=100
+            
+          # Create database
+          gcloud sql databases create ${_DB_NAME} --instance=${_DB_INSTANCE}
+          
+          # Create user
+          gcloud sql users create ${_DB_USER} \
+            --instance=${_DB_INSTANCE} \
+            --password=$(openssl rand -base64 24)
+        fi
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'create-gcs-bucket'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Check if bucket exists
+        if gsutil ls gs://${_GCS_BUCKET} 2>/dev/null; then
+          echo "GCS bucket already exists"
+        else
+          echo "Creating GCS bucket..."
+          gsutil mb -l ${_REGION} gs://${_GCS_BUCKET}
+          gsutil iam ch allUsers:objectViewer gs://${_GCS_BUCKET}
+        fi
+
+  # ==========================================
+  # BACKEND BUILD & DEPLOY
+  # ==========================================
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-backend'
+    dir: 'backend'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:latest'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-backend'
+    waitFor: ['build-backend']
+    args:
+      - 'push'
+      - '--all-tags'
+      - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-backend'
+    waitFor: ['push-backend', 'create-cloudsql-instance']
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_BACKEND_SERVICE}'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:$SHORT_SHA'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '8080'
+      - '--memory'
+      - '512Mi'
+      - '--cpu'
+      - '1'
+      - '--min-instances'
+      - '1'
+      - '--max-instances'
+      - '10'
+      - '--set-env-vars'
+      - 'STORAGE_TYPE=gcs,GCS_BUCKET_NAME=${_GCS_BUCKET},GCP_PROJECT_ID=$PROJECT_ID,USE_CLOUD_SQL=true,CLOUD_SQL_INSTANCE=$PROJECT_ID:${_REGION}:${_DB_INSTANCE}'
+      - '--set-secrets'
+      - 'DATABASE_URL=database-url:latest,JWT_SECRET=jwt-secret:latest,GOOGLE_CLIENT_ID=google-client-id:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest,MIDTRANS_SERVER_KEY=midtrans-server-key:latest'
+      - '--add-cloudsql-instances'
+      - '$PROJECT_ID:${_REGION}:${_DB_INSTANCE}'
+
+  # ==========================================
+  # FRONTEND BUILD & DEPLOY
+  # ==========================================
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-frontend'
+    waitFor: ['deploy-backend']
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:latest'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-frontend'
+    waitFor: ['build-frontend']
+    args:
+      - 'push'
+      - '--all-tags'
+      - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-frontend'
+    waitFor: ['push-frontend']
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_FRONTEND_SERVICE}'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:$SHORT_SHA'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '3000'
+      - '--memory'
+      - '1Gi'
+      - '--cpu'
+      - '1'
+      - '--min-instances'
+      - '1'
+      - '--max-instances'
+      - '10'
+      - '--set-env-vars'
+      - 'NODE_ENV=production,NEXT_TELEMETRY_DISABLED=1'
+      - '--set-secrets'
+      - 'NEXTAUTH_SECRET=nextauth-secret:latest'
+
+  # ==========================================
+  # GET SERVICE URLs
+  # ==========================================
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'show-urls'
+    waitFor: ['deploy-frontend', 'deploy-backend']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "======================================"
+        echo "DEPLOYMENT COMPLETE!"
+        echo "======================================"
+        echo ""
+        FRONTEND_URL=$(gcloud run services describe ${_FRONTEND_SERVICE} --region=${_REGION} --format='value(status.url)')
+        BACKEND_URL=$(gcloud run services describe ${_BACKEND_SERVICE} --region=${_REGION} --format='value(status.url)')
+        echo "Frontend URL: $${FRONTEND_URL}"
+        echo "Backend URL: $${BACKEND_URL}"
+        echo ""
+        echo "Database: ${_DB_INSTANCE}"
+        echo "Bucket: ${_GCS_BUCKET}"
+
+images:
+  - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/${_FRONTEND_SERVICE}:latest'
+  - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 100
+
+timeout: '2400s'

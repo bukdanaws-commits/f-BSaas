@@ -312,13 +312,23 @@ class ApiClient {
   // ==================== AUTH ====================
   
   async getGoogleAuthUrl() {
-    return this.request<{ auth_url: string }>('/auth/google')
+    return this.request<{ auth_url: string; state: string }>('/auth/google')
   }
 
-  async loginWithGoogle(accessToken: string) {
+  async googleCallback(code: string) {
+    const response = await this.request<{ token: string; user: User; tenant?: Tenant; role?: string }>(`/auth/google/callback?code=${code}`)
+    
+    if (response.success && response.data?.token) {
+      this.setToken(response.data.token)
+    }
+    
+    return response
+  }
+
+  async loginWithGoogle(googleToken: string) {
     const response = await this.request<{ token: string; user: User; tenant?: Tenant; role?: string }>('/auth/google/login', {
       method: 'POST',
-      body: JSON.stringify({ access_token: accessToken }),
+      body: JSON.stringify({ google_token: googleToken }),
     })
     
     if (response.success && response.data?.token) {
@@ -334,6 +344,10 @@ class ApiClient {
 
   logout() {
     this.setToken(null)
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('user')
+      localStorage.removeItem('demo_role')
+    }
   }
 
   // ==================== EVENTS ====================

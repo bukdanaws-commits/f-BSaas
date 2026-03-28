@@ -12,20 +12,24 @@ type Config struct {
 	ServerPort string
 	AppEnv     string
 
-	// Database - Supabase
+	// Database - PostgreSQL (Cloud SQL or Supabase)
 	DatabaseURL string
+
+	// Cloud SQL specific
+	CloudSQLInstance string // Format: project:region:instance
+	UseCloudSQL      bool
 
 	// JWT
 	JWTSecret string
 
-	// Google OAuth
+	// Google OAuth (Direct)
 	GoogleClientID     string
 	GoogleClientSecret string
 
-	// Supabase
-	SupabaseURL        string
-	SupabaseAnonKey    string
-	SupabaseServiceKey string
+	// GCP Storage
+	GCSBucketName string
+	GCPProjectID  string
+	StorageType   string // "gcs" or "local"
 
 	// Midtrans
 	MidtransMerchantID string
@@ -35,6 +39,9 @@ type Config struct {
 
 	// Frontend
 	FrontendURL string
+
+	// Upload
+	UploadDir string
 }
 
 var AppConfig *Config
@@ -51,7 +58,9 @@ func LoadConfig() {
 		AppEnv:     getEnv("APP_ENV", "development"),
 
 		// Database
-		DatabaseURL: getEnv("DATABASE_URL", ""),
+		DatabaseURL:       getEnv("DATABASE_URL", ""),
+		CloudSQLInstance:  getEnv("CLOUD_SQL_INSTANCE", ""),
+		UseCloudSQL:       getEnvBool("USE_CLOUD_SQL", false),
 
 		// JWT
 		JWTSecret: getEnv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production"),
@@ -60,10 +69,10 @@ func LoadConfig() {
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 
-		// Supabase
-		SupabaseURL:        getEnv("SUPABASE_URL", ""),
-		SupabaseAnonKey:    getEnv("SUPABASE_ANON_KEY", ""),
-		SupabaseServiceKey: getEnv("SUPABASE_SERVICE_KEY", ""),
+		// GCP Storage
+		GCSBucketName: getEnv("GCS_BUCKET_NAME", ""),
+		GCPProjectID:  getEnv("GCP_PROJECT_ID", ""),
+		StorageType:   getEnv("STORAGE_TYPE", "local"),
 
 		// Midtrans
 		MidtransMerchantID: getEnv("MIDTRANS_MERCHANT_ID", ""),
@@ -73,6 +82,9 @@ func LoadConfig() {
 
 		// Frontend
 		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
+
+		// Upload
+		UploadDir: getEnv("UPLOAD_DIR", "./uploads"),
 	}
 }
 
