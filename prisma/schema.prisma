@@ -1,0 +1,430 @@
+// This is your Prisma schema file,
+// SAAS Event Management System - Multi-Tenant
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================
+// USERS & AUTHENTICATION
+// =====================================
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  avatarUrl   String?  @map("avatar_url")
+  googleId    String?  @unique @map("google_id")
+  isSuperAdmin Boolean @default(false) @map("is_super_admin")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  ownedTenants    Tenant[]       @relation("TenantOwner")
+  memberships     Membership[]
+  operatedCheckins Checkin[]
+  eventStaff      EventStaff[]
+
+  @@map("users")
+}
+
+// =====================================
+// TENANT (EO - Event Organizer)
+// =====================================
+model Tenant {
+  id         String    @id @default(cuid())
+  name       String
+  slug       String?   @unique
+  ownerId    String?   @map("owner_id")
+  status     String    @default("pending") // pending, active, suspended
+  verifiedAt DateTime? @map("verified_at")
+  phone      String?
+  address    String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  owner              User?               @relation("TenantOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  memberships        Membership[]
+  creditWallet       CreditWallet?
+  creditTransactions CreditTransaction[]
+  events             Event[]
+  participants       Participant[]
+  scanLogs           ScanLog[]
+
+  @@map("tenants")
+}
+
+// =====================================
+// MEMBERSHIP (User-Tenant Relationship)
+// =====================================
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  tenantId  String   @map("tenant_id")
+  role      String   @default("crew") // owner, admin, crew
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@map("memberships")
+}
+
+// =====================================
+// CREDIT SYSTEM
+// =====================================
+model CreditWallet {
+  id           String   @id @default(cuid())
+  tenantId     String   @unique @map("tenant_id")
+  balance      Int      @default(0)
+  bonusBalance Int      @default(0) @map("bonus_balance")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("credit_wallets")
+}
+
+model CreditTransaction {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  type          String   // purchase, usage, bonus, refund
+  amount        Int
+  referenceType String?  @map("reference_type")
+  referenceId   String?  @map("reference_id")
+  description   String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("credit_transactions")
+}
+
+// =====================================
+// EVENT
+// =====================================
+model Event {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  name        String
+  title       String?
+  description String?
+  bannerUrl   String?   @map("banner_url")
+  startDate   DateTime? @map("start_date")
+  endDate     DateTime? @map("end_date")
+  location    String?
+  category    String?
+  capacity    Int       @default(0)
+
+  // Display Settings
+  welcomeMessage  String? @default("Selamat Datang!") @map("welcome_message")
+  displayDuration Int     @default(5) @map("display_duration")
+  enableSound     Boolean @default(false) @map("enable_sound")
+  checkInDesks    Int     @default(4) @map("check_in_desks")
+
+  // F&B Default Settings
+  defaultMaxFoodClaims  Int @default(4) @map("default_max_food_claims")
+  defaultMaxDrinkClaims Int @default(2) @map("default_max_drink_claims")
+
+  // Storage
+  storageDays Int @default(15) @map("storage_days")
+
+  // Status
+  status String @default("draft") // draft, active, completed
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticketTypes   TicketType[]
+  participants  Participant[]
+  checkins      Checkin[]
+  booths        Booth[]
+  menuCategories MenuCategory[]
+  menuItems     MenuItem[]
+  claims        Claim[]
+  scanLogs      ScanLog[]
+  displayQueue  DisplayQueue[]
+  eventStaff    EventStaff[]
+  formFields    EventFormField[]
+
+  @@index([tenantId])
+  @@map("events")
+}
+
+// =====================================
+// EVENT STAFF
+// =====================================
+model EventStaff {
+  id        String   @id @default(cuid())
+  eventId   String   @map("event_id")
+  userId    String   @map("user_id")
+  role      String   @default("crew") // admin, crew
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@map("event_staff")
+}
+
+// =====================================
+// TICKET TYPE
+// =====================================
+model TicketType {
+  id       String @id @default(cuid())
+  eventId  String @map("event_id")
+  name     String // VIP, Regular, Student
+  price    Int    @default(0) // 0 = gratis
+  quota    Int    @default(0)
+  features Json?  // Prioritas check-in, reserved seating, etc.
+
+  // Relations
+  event       Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participants Participant[]
+
+  @@map("ticket_types")
+}
+
+// =====================================
+// PARTICIPANT
+// =====================================
+model Participant {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  eventId  String @map("event_id")
+
+  // Personal Info
+  name  String
+  email String
+  phone String?
+
+  // Ticket
+  ticketTypeId String?  @map("ticket_type_id")
+
+  // QR Code
+  qrCode String @unique @map("qr_code")
+
+  // Photo & AI
+  originalPhotoUrl String? @map("original_photo_url")
+  aiPhotoUrl       String? @map("ai_photo_url")
+  bio              String?
+  aiGenerationStatus String @default("pending") @map("ai_generation_status") // pending, processing, success, failed
+  aiGeneratedAt    DateTime? @map("ai_generated_at")
+
+  // Check-in
+  isCheckedIn  Boolean   @default(false) @map("is_checked_in")
+  checkedInAt  DateTime? @map("checked_in_at")
+  checkinCount Int       @default(0) @map("checkin_count")
+
+  // F&B Claims (per participant)
+  foodClaims     Int @default(0) @map("food_claims")
+  drinkClaims    Int @default(0) @map("drink_claims")
+  maxFoodClaims  Int @default(4) @map("max_food_claims")
+  maxDrinkClaims Int @default(2) @map("max_drink_claims")
+
+  // Status
+  isActive      Boolean  @default(true) @map("is_active")
+  isBlacklisted Boolean  @default(false) @map("is_blacklisted")
+
+  // Metadata
+  meta      Json?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  expiresAt DateTime? @map("expires_at")
+
+  // Relations
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event    Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType TicketType? @relation(fields: [ticketTypeId], references: [id])
+  checkins Checkin[]
+  claims   Claim[]
+  scanLogs ScanLog[]
+  participantFields ParticipantField[]
+
+  @@unique([eventId, email])
+  @@index([qrCode])
+  @@index([eventId, isCheckedIn])
+  @@map("participants")
+}
+
+// =====================================
+// CHECKIN
+// =====================================
+model Checkin {
+  id            String   @id @default(cuid())
+  eventId       String   @map("event_id")
+  participantId String   @unique @map("participant_id")
+  operatorId    String?  @map("operator_id")
+  deskNumber    Int      @default(1) @map("desk_number")
+  checkedInAt   DateTime @default(now()) @map("checked_in_at")
+
+  // Relations
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  operator    User?       @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([checkedInAt])
+  @@map("checkins")
+}
+
+// =====================================
+// F&B - BOOTH
+// =====================================
+model Booth {
+  id      String  @id @default(cuid())
+  eventId String  @map("event_id")
+  name    String
+  type    String  // food, drink, both
+  isActive Boolean @default(true) @map("is_active")
+
+  // Relations
+  event  Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  claims Claim[]
+
+  @@map("booths")
+}
+
+// =====================================
+// F&B - MENU
+// =====================================
+model MenuCategory {
+  id      String @id @default(cuid())
+  eventId String @map("event_id")
+  name    String
+  type    String // food, drink
+
+  // Relations
+  event     Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  menuItems MenuItem[]
+
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id         String  @id @default(cuid())
+  eventId    String  @map("event_id")
+  categoryId String? @map("category_id")
+  name       String
+  stock      Int     @default(0)
+  isActive   Boolean @default(true) @map("is_active")
+
+  // Relations
+  event    Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  category MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  claims   Claim[]
+
+  @@map("menu_items")
+}
+
+// =====================================
+// F&B - CLAIM
+// =====================================
+model Claim {
+  id            String   @id @default(cuid())
+  eventId       String   @map("event_id")
+  participantId String   @map("participant_id")
+  menuItemId    String   @map("menu_item_id")
+  boothId       String?  @map("booth_id")
+  claimedAt     DateTime @default(now()) @map("claimed_at")
+
+  // Relations
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  booth       Booth?      @relation(fields: [boothId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([claimedAt])
+  @@map("claims")
+}
+
+// =====================================
+// DISPLAY QUEUE
+// =====================================
+model DisplayQueue {
+  id            String   @id @default(cuid())
+  eventId       String   @map("event_id")
+  participantId String?  @map("participant_id")
+  name          String
+  photoUrl      String?  @map("photo_url")
+  isDisplayed   Boolean  @default(false) @map("is_displayed")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, isDisplayed])
+  @@map("display_queue")
+}
+
+// =====================================
+// SCAN LOG
+// =====================================
+model ScanLog {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  eventId       String?   @map("event_id")
+  participantId String?   @map("participant_id")
+  type          String?   // checkin, claim
+  result        String?   // success, failed, duplicate
+  device        String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  tenant      Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event       Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participant Participant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([createdAt])
+  @@map("scan_logs")
+}
+
+// =====================================
+// EVENT FORM FIELDS (Flexible Forms)
+// =====================================
+model EventFormField {
+  id         String   @id @default(cuid())
+  eventId    String   @map("event_id")
+  fieldName  String   @map("field_name")
+  fieldLabel String   @map("field_label")
+  fieldType  String   @map("field_type") // text, select, checkbox, etc.
+  isRequired Boolean  @default(false) @map("is_required")
+  options    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  event            Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participantFields ParticipantField[]
+
+  @@map("event_form_fields")
+}
+
+model ParticipantField {
+  id            String   @id @default(cuid())
+  participantId String   @map("participant_id")
+  fieldId       String   @map("field_id")
+  value         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  participant Participant     @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  field       EventFormField  @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, fieldId])
+  @@map("participant_fields")
+}
